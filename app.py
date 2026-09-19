@@ -219,9 +219,26 @@ preset = {
     "Custom": (0, 0),
 }[scenario_name]
 
+def demand_surge_slider(default_pct: int) -> int:
+    """10–100% demand surge intensity; default keeps the previous 30% preset."""
+    return st.sidebar.slider(
+        "Demand surge (%)",
+        min_value=10,
+        max_value=100,
+        value=default_pct,
+        step=1,
+        help="Scales simulated demand relative to the baseline forecast "
+             "(10% = mild surge, 100% = demand doubles). Re-run the twin after changing this.",
+        key="demand_surge_pct",
+    )
+
 if scenario_name == "Custom":
     demand_pct = st.sidebar.slider("Demand change (%)", -50, 100, preset[0])
     lead_time_delta = st.sidebar.slider("Lead-time change (days)", -3, 10, preset[1])
+elif scenario_name in ("Demand Surge", "Combined Disruption"):
+    demand_pct = demand_surge_slider(preset[0])
+    lead_time_delta = preset[1]
+    st.sidebar.caption(f"Demand {demand_pct:+d}%, lead time {lead_time_delta:+d} days")
 else:
     demand_pct, lead_time_delta = preset
     st.sidebar.caption(f"Demand {demand_pct:+d}%, lead time {lead_time_delta:+d} days")
@@ -457,8 +474,10 @@ with tab2:
 # ---------------------------------------------------------------------------
 with tab3:
     st.subheader(f"Baseline vs Scenario: {scenario_config.name}")
+    demand_surge_shown = (scenario_config.demand_multiplier - 1.0) * 100
     st.caption(
-        f"Demand multiplier: {scenario_config.demand_multiplier:.2f}x | "
+        f"Demand surge: {demand_surge_shown:+.0f}% "
+        f"({scenario_config.demand_multiplier:.2f}x vs baseline forecast) | "
         f"Lead-time change: {scenario_config.lead_time_change_days:+d} days | "
         f"Target service level: {scenario_config.service_level_target*100:.0f}%"
     )
