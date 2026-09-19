@@ -1,0 +1,16 @@
+{
+  "MAE": 5.9252,
+  "RMSE": 7.6695,
+  "sMAPE": 12.4752,
+  "validation_days": 90,
+  "n_train_rows": 854000,
+  "n_val_rows": 45000,
+  "train_date_range": [
+    "2013-01-29",
+    "2017-10-02"
+  ],
+  "val_date_range": [
+    "2017-10-03",
+    "2017-12-31"
+  ]
+}
