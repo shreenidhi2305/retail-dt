@@ -29,6 +29,8 @@ Source: Kaggle *Store Item Demand Forecasting* dataset.
 
 The Scenario Simulator compares a **baseline** (no shock) against a configured disruption. Demand Surge and Combined Disruption expose a **Demand surge (%)** slider from **10% to 100%** (previously fixed at +30%). The twin multiplies forecasted demand by `1 + surge/100` while keeping the stocking policy sized on normal demand, so you can see how service level, stockouts, and health score change as the shock gets more severe. Re-run the simulation after moving the slider.
 
+The same page also shows a **demand surge comparison** table and charts at +10%, +30%, +50%, +70%, and +100% (forecast computed once; only the demand multiplier changes).
+
 ## Architecture
 
 ```

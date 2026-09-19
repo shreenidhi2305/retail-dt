@@ -18,6 +18,7 @@ import time as time_module
 
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 
 from data_utils import load_train
@@ -118,6 +119,17 @@ def get_model_bundle():
 def get_model_metrics():
     with open("models/metrics.json") as f:
         return json.load(f)
+
+
+@st.cache_data(show_spinner="Comparing demand surge intensities...")
+def run_cached_surge_sweep(_train_df, _bundle, pairs, service_level, base_lead_time,
+                            order_coverage_days, horizon_days, start_date_str, seed=42):
+    supplier = SupplierConfig(base_lead_time_days=base_lead_time, order_coverage_days=order_coverage_days)
+    start_date = pd.Timestamp(start_date_str)
+    return simulation.run_demand_surge_sweep(
+        _bundle, _train_df, pairs, supplier, start_date, horizon_days,
+        service_level_target=service_level, seed=seed,
+    )
 
 
 @st.cache_data(show_spinner="Running Digital Twin simulation...")
@@ -514,6 +526,54 @@ with tab3:
         "Scenario": _fmt_row(scn_agg),
     })
     st.dataframe(comp_table, width='stretch', hide_index=True)
+
+    st.markdown("#### Demand surge comparison")
+    st.caption(
+        "Same network, supplier policy, and demand forecast; only the demand shock changes "
+        "(+10%, +30%, +50%, +70%, +100%). Lead time is held at the baseline so this isolates "
+        "surge intensity. A table shows exact values; the charts show the trend."
+    )
+    sweep_df = run_cached_surge_sweep(
+        train_df, model_bundle, pairs, service_level_target,
+        base_lead_time, order_coverage_days, horizon_days, str(start_date.date()),
+    )
+    st.dataframe(
+        simulation.format_surge_comparison_table(sweep_df),
+        width='stretch',
+        hide_index=True,
+    )
+
+    titles = [
+        "Total demand", "Unmet demand", "Service level (%)",
+        "Stockouts", "Average inventory",
+    ]
+    y_cols = [
+        "total_demand", "unmet_demand", "service_level",
+        "stockouts", "average_inventory",
+    ]
+    fig_sweep = make_subplots(
+        rows=2, cols=3,
+        subplot_titles=titles,
+        vertical_spacing=0.18,
+        specs=[[{}, {}, {}], [{}, {}, None]],
+    )
+    x = sweep_df["demand_surge_pct"]
+    plot_specs = [
+        (1, 1, y_cols[0], ACCENT, False),
+        (1, 2, y_cols[1], ACCENT_BAD, False),
+        (1, 3, y_cols[2], ACCENT_GOOD, True),
+        (2, 1, y_cols[3], ACCENT_WARN, False),
+        (2, 2, y_cols[4], ACCENT, False),
+    ]
+    for row, col, ykey, color, is_pct in plot_specs:
+        y = sweep_df[ykey] * 100 if is_pct else sweep_df[ykey]
+        fig_sweep.add_trace(
+            go.Scatter(x=x, y=y, mode="lines+markers", line=dict(color=color), showlegend=False),
+            row=row, col=col,
+        )
+    fig_sweep.update_xaxes(title_text="Demand surge (%)", dtick=20)
+    fig_sweep.update_layout(height=520, margin=dict(t=40), plot_bgcolor="white")
+    st.plotly_chart(fig_sweep, width='stretch')
 
     st.markdown("#### Business Operational Health")
     hc1, hc2 = st.columns(2)
