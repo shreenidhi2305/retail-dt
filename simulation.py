@@ -23,6 +23,9 @@ from forecasting import recursive_forecast, bulk_historical_demand_stats
 from twin import DigitalTwin, ScenarioConfig, SupplierConfig
 
 
+DEMAND_SURGE_SWEEP_PCTS = (10, 30, 50, 70, 100)
+
+
 def run_scenario(model_bundle, train_df, pairs, scenario: ScenarioConfig,
                   supplier: SupplierConfig, start_date, horizon_days):
     """
@@ -35,6 +38,71 @@ def run_scenario(model_bundle, train_df, pairs, scenario: ScenarioConfig,
     steps_df = twin.run()
     summary_df = twin.network_summary()
     return twin, steps_df, summary_df
+
+
+def run_demand_surge_sweep(
+    model_bundle,
+    train_df,
+    pairs,
+    supplier: SupplierConfig,
+    start_date,
+    horizon_days,
+    surge_pcts=DEMAND_SURGE_SWEEP_PCTS,
+    service_level_target: float = 0.95,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """
+    Compare twin outcomes at several demand-surge intensities.
+
+    Forecast and historical demand stats are computed once, then each surge
+    only changes ScenarioConfig.demand_multiplier. Lead time is held at the
+    supplier baseline so the table isolates the demand shock.
+    """
+    pred_df = recursive_forecast(model_bundle, train_df, pairs, start_date, horizon_days)
+    demand_stats = bulk_historical_demand_stats(train_df, pairs)
+
+    rows = []
+    for pct in surge_pcts:
+        scenario = ScenarioConfig(
+            name=f"Demand Surge +{int(pct)}%",
+            demand_multiplier=1.0 + pct / 100.0,
+            lead_time_change_days=0,
+            service_level_target=service_level_target,
+            random_seed=seed,
+        )
+        twin = DigitalTwin(pairs, scenario, supplier, demand_stats, pred_df.copy())
+        twin.run()
+        agg = network_aggregate(twin.network_summary())
+        rows.append({
+            "demand_surge_pct": int(pct),
+            "total_demand": agg["total_demand"],
+            "unmet_demand": agg["unmet_demand"],
+            "service_level": agg["service_level"],
+            "stockouts": agg["stockout_events"],
+            "average_inventory": agg["average_inventory"],
+        })
+    return pd.DataFrame(rows)
+
+
+def format_surge_comparison_table(sweep_df: pd.DataFrame) -> pd.DataFrame:
+    """Metrics as rows, surge % as columns — easier to scan than long format."""
+    if sweep_df.empty:
+        return sweep_df
+
+    display_rows = []
+    for _, row in sweep_df.iterrows():
+        col = f"+{int(row['demand_surge_pct'])}%"
+        display_rows.append({
+            "col": col,
+            "Total demand": f"{row['total_demand']:,.0f}",
+            "Unmet demand": f"{row['unmet_demand']:,.0f}",
+            "Service level": f"{row['service_level'] * 100:.1f}%",
+            "Stockouts": f"{int(row['stockouts']):,}",
+            "Average inventory": f"{row['average_inventory']:,.0f}",
+        })
+    wide = pd.DataFrame(display_rows).set_index("col").T
+    wide.index.name = "Metric"
+    return wide.reset_index()
 
 
 def network_aggregate(summary_df: pd.DataFrame) -> dict:
